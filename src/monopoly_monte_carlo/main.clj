@@ -1,4 +1,4 @@
-(ns monopoly.main
+(ns monopoly-monte-carlo.main
   (:require [clojure.pprint :refer [pprint print-table]]
             [clojure.core.async :as async :refer [<! >! <!!]]
             [clojure.tools.cli :refer [parse-opts]])
@@ -95,11 +95,13 @@
           (recur (dec iterations-left)
                  total))))))
 
-(def default-rolls 3)
+(def default-rolls-to-escape-jail 3)
+(def start-turns-left-in-jail 3)
+(def concurrent-workers-batch-size 500)
 
 (def init-state
   {:position 0
-   :rolls default-rolls
+   :rolls-to-escape-jail default-rolls-to-escape-jail
    :get-out-of-jail-free-cards 0
    :turns-left-in-jail 0})
 
@@ -108,7 +110,7 @@
 (def leave-jail #(assoc % :turns-left-in-jail 0))
 (def use-get-out-of-jail-free-card #(-> % (update-in [:get-out-of-jail-free-cards] dec)
                                           leave-jail))
-(def reset-rolls #(assoc % :rolls default-rolls))
+(def reset-rolls #(assoc % :rolls-to-escape-jail default-rolls-to-escape-jail))
 (def get-place-name (comp places :position))
 
 (defn advance-position [state spaces]
@@ -118,7 +120,7 @@
 (defn go-to-jail [state]
   "Move 'player' to jail"
   (merge state {:position (place->index :jail)
-                :turns-left-in-jail 3}))
+                :turns-left-in-jail start-turns-left-in-jail}))
 
 (defmacro if->
   "Threads an expression through to one of two forms depending on the truth-value of `test`
@@ -137,8 +139,8 @@
   (let [[roll doubles?] (non-recursive-roll)]
     (if-> state doubles?
           (-> leave-jail
-              (advance-position roll)
-              (update-in [:rolls] dec)))))
+              (advance-position roll))
+          (update-in [:rolls-to-escape-jail] dec))))
 
 (defn get-out-of-jail [state]
   "Attempt to get out of jail by waiting a turn, using a get-out-of-jail-free card or
@@ -152,7 +154,7 @@
 
 (defn roll-dice [state]
   "Roll dice and either move or go directly to jail depending on number of doubles thrown"
-  (let [roll (recursive-dice-roll (:rolls state))]
+  (let [roll (recursive-dice-roll (:rolls-to-escape-jail state))]
     (if-> state (= roll :jail)
           go-to-jail
           (advance-position roll))))
@@ -199,7 +201,7 @@
   "Creates a batch of workers to run through the game concurrently
   Returns a map mapping position number -> number of hits"
   (let [workers (take num-workers (repeatedly (partial run-worker num-turns)))
-        workers-chan (async/merge workers 10)
+        workers-chan (async/merge workers concurrent-workers-batch-size)
         results-chan (async/chan)]
     (async/go-loop [positions->hits (zipmap (range (count places)) (repeat 0))]
                    (let [pos (<! workers-chan)]
@@ -237,7 +239,7 @@
       :default 30])
    (positive-number-cli-option
      [nil "--workers WORKERS" "Number of workers"
-      :default 20])
+      :default 200])
    ["-h" "--help" "Show this help"]])
 
 (defn -main

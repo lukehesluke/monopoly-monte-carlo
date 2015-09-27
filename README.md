@@ -1,14 +1,7 @@
-# monopoly
+# monopoly-monte-carlo
 
-A Clojure library designed to ... well, that part is up to you.
+Runs a concurrent Monte Carlo simulation of Monopoly games to determine properties which are landed on most
 
 ## Usage
 
-FIXME
-
-## License
-
-Copyright © 2015 FIXME
-
-Distributed under the Eclipse Public License either version 1.0 or (at
-your option) any later version.
+    lein run --workers [NUM WORKERS] --turns [NUM TURNS PER GAME]
